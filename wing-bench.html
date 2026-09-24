@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -12,57 +12,57 @@
 <body>
 <canvas id="stage"></canvas>
 
-<section class="panel" aria-label="Contrôles">
+<section class="panel" aria-label="Controls">
   <div class="row">
     <h1>Wing Linkage Bench</h1>
   </div>
   <div>
     <div class="row">
-      <span class="label">Moteur · angle</span>
+      <span class="label">Motor · angle</span>
       <span class="num" id="angleOut">—</span>
     </div>
-    <input type="range" id="slider" min="-180" max="180" step="0.5" value="0" aria-label="Angle de la barre moteur">
+    <input type="range" id="slider" min="-180" max="180" step="0.5" value="0" aria-label="Motor bar angle">
   </div>
   <div class="row">
     <span class="chip" id="status">—</span>
     <span class="num" id="counts"></span>
   </div>
   <div class="btns">
-    <button id="btnList">Liste des barres</button>
-    <button id="btnReset" title="Revenir à la pose du dernier montage">Pose initiale</button>
-    <button id="btnExample">Exemple carton</button>
-    <button id="btnClear" class="danger">Tout effacer</button>
+    <button id="btnList">Bar list</button>
+    <button id="btnReset" title="Back to the pose of the last edit">Reset pose</button>
+    <button id="btnExample">Cardboard example</button>
+    <button id="btnClear" class="danger">Clear all</button>
   </div>
   <div class="btns">
-    <button id="btnExport">Exporter JSON</button>
-    <button id="btnImport">Importer JSON</button>
+    <button id="btnExport">Export JSON</button>
+    <button id="btnImport">Import JSON</button>
     <input type="file" id="fileImport" accept=".json,application/json" hidden>
   </div>
-  <p class="hint"><b>Double-clic</b> : nouvelle barre<br><b>Clic</b> sur une barre : édition de la barre<br><b>Glisser</b> la barre : déplacer, une extrémité : pivoter/allonger</p>
+  <p class="hint"><b>Double-click</b>: new bar<br><b>Click</b> a bar: edit it<br><b>Drag</b> a bar: move it, drag an end: rotate/stretch</p>
 </section>
 
-<section class="panel" id="menu" hidden aria-label="Barre sélectionnée">
-  <div class="row"><span class="label" id="menuTitle">Barre</span><button id="menuClose" aria-label="Fermer">✕</button></div>
-  <label>Longueur (cm) <input type="number" id="inLen" step="0.1" min="0.5"></label>
-  <label>Largeur (cm) <input type="number" id="inWidth" step="0.1" min="0.3"></label>
+<section class="panel" id="menu" hidden aria-label="Selected bar">
+  <div class="row"><span class="label" id="menuTitle">Bar</span><button id="menuClose" aria-label="Close">✕</button></div>
+  <label>Length (cm) <input type="number" id="inLen" step="0.1" min="0.5"></label>
+  <label>Width (cm) <input type="number" id="inWidth" step="0.1" min="0.3"></label>
   <label>Angle (°) <input type="number" id="inAngle" step="1"></label>
   <div class="btns">
-    <button id="btnDriver">Moteur</button>
-    <button id="btnDelete" class="danger">Supprimer</button>
+    <button id="btnDriver">Motor</button>
+    <button id="btnDelete" class="danger">Delete</button>
   </div>
 </section>
 
-<section class="panel" id="list" hidden aria-label="Liste des barres">
-  <div class="row"><span class="label">Barres</span><button id="listClose" aria-label="Fermer">✕</button></div>
+<section class="panel" id="list" hidden aria-label="Bar list">
+  <div class="row"><span class="label">Bars</span><button id="listClose" aria-label="Close">✕</button></div>
   <table>
-    <thead><tr><th>Barre</th><th>Long. (cm)</th><th>Larg. (cm)</th></tr></thead>
+    <thead><tr><th>Bar</th><th>Len. (cm)</th><th>Wid. (cm)</th></tr></thead>
     <tbody id="listBody"></tbody>
     <tfoot><tr><th>Total</th><td id="listTotal"></td><td></td></tr></tfoot>
   </table>
   <div class="scale">
-    <label for="inScale">Échelle ×</label>
+    <label for="inScale">Scale ×</label>
     <input type="number" id="inScale" step="0.1" min="0.1" value="1.5">
-    <button id="btnScale">Appliquer</button>
+    <button id="btnScale">Apply</button>
   </div>
 </section>
 

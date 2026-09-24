@@ -212,7 +212,7 @@ function load() {
 }
 const serialize = () => JSON.stringify({ ...state, restPose }, null, 2);
 function applySnapshot(d) {
-  if (!d || !Array.isArray(d.bars) || !Array.isArray(d.joints)) throw new Error("Fichier invalide : barres ou pivots manquants");
+  if (!d || !Array.isArray(d.bars) || !Array.isArray(d.joints)) throw new Error("Invalid file: missing bars or joints");
   restPose = d.restPose || null;
   delete d.restPose;
   state = { ...emptyState(), ...d };
@@ -307,7 +307,7 @@ function drawBase() {
   ctx.restore();
   ctx.fillStyle = "rgba(255,255,255,.75)";
   ctx.font = `700 ${Math.max(11, view.scale * 0.8)}px ${css("--font-ui")}`;
-  ctx.fillText("BASE FIXE", p.x + 8, p.y + h - 8);
+  ctx.fillText("FIXED BASE", p.x + 8, p.y + h - 8);
 }
 
 function drawBar(b) {
@@ -390,20 +390,20 @@ function updatePanel() {
   ui.slider.disabled = !d;
   const st = $("status");
   st.className = "chip " + (!d ? "" : motor.blocked ? "bad" : "ok");
-  st.textContent = !d ? "Aucune barre moteur" : motor.blocked ? "Bloqué à cette position" : "Mécanisme libre";
-  $("counts").textContent = `${state.bars.length} barres · ${state.joints.length} pivots`;
+  st.textContent = !d ? "No motor bar" : motor.blocked ? "Jammed at this position" : "Moving freely";
+  $("counts").textContent = `${state.bars.length} bars · ${state.joints.length} pins`;
 }
 
 function openMenu(bar, sx, sy) {
   ui.selectedId = bar.id;
-  $("menuTitle").textContent = `Barre #${bar.id}`;
+  $("menuTitle").textContent = `Bar #${bar.id}`;
   $("inLen").value = bar.len.toFixed(1);
   $("inWidth").value = bar.w.toFixed(1);
   $("inAngle").value = Bar.angle(bar).toFixed(0);
   const isDriver = bar.id === state.driverId;
   const btn = $("btnDriver");
   btn.classList.toggle("on", isDriver);
-  btn.textContent = isDriver ? "Moteur ✓" : "Définir moteur";
+  btn.textContent = isDriver ? "Motor ✓" : "Set as motor";
   ui.menu.hidden = false;
   renderList();
   const r = ui.menu.getBoundingClientRect();
@@ -433,7 +433,7 @@ $("btnDriver").addEventListener("click", () => {
   if (!bar) return;
   if (state.driverId === bar.id) state.driverId = null;
   else if (state.joints.some((j) => j.b === null && j.a === bar.id)) state.driverId = bar.id;
-  else { $("status").className = "chip bad"; $("status").textContent = "Le moteur doit être fixé à la base"; return; }
+  else { $("status").className = "chip bad"; $("status").textContent = "The motor must be pinned to the base"; return; }
   save(); syncMotor(); openMenu(bar, parseFloat(ui.menu.style.left) - 16, parseFloat(ui.menu.style.top) - 16);
 });
 $("btnDelete").addEventListener("click", () => {
@@ -483,7 +483,7 @@ $("fileImport").addEventListener("change", async (e) => {
     closeMenu(); save(); renderList(); fitView(); syncMotor(); requestDraw();
   } catch (err) {
     $("status").className = "chip bad";
-    $("status").textContent = err instanceof SyntaxError ? "Fichier JSON illisible" : err.message;
+    $("status").textContent = err instanceof SyntaxError ? "Unreadable JSON file" : err.message;
   }
 });
 $("btnList").addEventListener("click", () => { $("list").hidden = !$("list").hidden; renderList(); });
@@ -498,11 +498,11 @@ $("btnReset").addEventListener("click", () => { if (restPose) { restoreBars(rest
 $("btnExample").addEventListener("click", () => { closeMenu(); loadExample(); requestDraw(); });
 $("btnClear").addEventListener("click", (e) => {
   if (!ui.clearArmed) {
-    ui.clearArmed = true; e.target.textContent = "Confirmer ?";
-    setTimeout(() => { ui.clearArmed = false; e.target.textContent = "Tout effacer"; }, 2500);
+    ui.clearArmed = true; e.target.textContent = "Confirm?";
+    setTimeout(() => { ui.clearArmed = false; e.target.textContent = "Clear all"; }, 2500);
     return;
   }
-  ui.clearArmed = false; e.target.textContent = "Tout effacer";
+  ui.clearArmed = false; e.target.textContent = "Clear all";
   state = emptyState();
   closeMenu(); commitEdit(); syncMotor();
 });
