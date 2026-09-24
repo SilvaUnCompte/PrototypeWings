@@ -560,13 +560,31 @@ function deleteBars(ids) {
   deselectAll(); commitEdit(); syncMotor();
 }
 
+function placePanel(panel, x, y) {
+  const r = panel.getBoundingClientRect();
+  panel.style.left = Math.max(16, Math.min(x, innerWidth - r.width - 16)) + "px";
+  panel.style.top = Math.max(16, Math.min(y, innerHeight - r.height - 16)) + "px";
+}
+
 function showPanelAt(panel, sx, sy) {
   hidePopups();
   panel.hidden = false;
-  const r = panel.getBoundingClientRect();
-  panel.style.left = Math.max(16, Math.min(sx + 16, innerWidth - r.width - 16)) + "px";
-  panel.style.top = Math.max(16, Math.min(sy + 16, innerHeight - r.height - 16)) + "px";
+  placePanel(panel, sx + 16, sy + 16);
 }
+
+// Popups can be moved out of the way by dragging their title row.
+function makeDraggable(panel) {
+  const handle = panel.querySelector(".row");
+  handle.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button")) return;
+    handle.setPointerCapture(e.pointerId);
+    const dx = e.clientX - panel.offsetLeft, dy = e.clientY - panel.offsetTop;
+    const move = (ev) => placePanel(panel, ev.clientX - dx, ev.clientY - dy);
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("lostpointercapture", () => handle.removeEventListener("pointermove", move), { once: true });
+  });
+}
+document.querySelectorAll(".popup").forEach(makeDraggable);
 
 function openBaseMenu(sx, sy) {
   closeMenu();

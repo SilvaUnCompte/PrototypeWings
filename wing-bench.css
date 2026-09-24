@@ -21,7 +21,7 @@
 }
 [hidden] { display: none !important; }
 html, body { height: 100%; }
-body { background: var(--mat); overflow: hidden; font-family: var(--font-ui); color: var(--panel-ink); }
+body { background: var(--mat); overflow: hidden; font-family: var(--font-ui); color: var(--panel-ink); user-select: none; }
 #stage { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
 .panel {
   position: fixed; top: calc(16px + env(safe-area-inset-top, 0px)); left: 16px;
@@ -50,6 +50,8 @@ button.on { background: var(--motor); border-color: var(--motor); color: #fff; }
 .hint { font-size: 14px; line-height: 1.35; color: var(--panel-muted); margin: 0; }
 .hint b { color: var(--panel-ink); font-weight: 500; }
 .popup { position: fixed; width: 210px; gap: 10px; }
+.popup > .row:first-child { cursor: grab; touch-action: none; }
+.popup > .row:first-child:active { cursor: grabbing; }
 .popup label { display: grid; grid-template-columns: 1fr 90px; align-items: center; gap: 8px; font-size: 15px; }
 .popup input, #list input { font-family: var(--font-num); font-size: 14px; padding: 3px 6px; border: 1px solid var(--panel-line); border-radius: 4px; background: #fffaf3; color: var(--panel-ink); width: 100%; box-sizing: border-box; }
 #baseMenu label.check { display: flex; }
