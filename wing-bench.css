@@ -7,6 +7,8 @@
   --kraft: #c8a57c;
   --kraft-dark: #8f6f4b;
   --pin: #ff2b2b;
+  --pin-fixed: #9a9a9a;
+  --person: rgba(255, 255, 255, 0.16);
   --motor: #ff7a2f;
   --panel: #f3ece2;
   --panel-ink: #2a241d;
@@ -47,9 +49,11 @@ button.danger { color: var(--bad); }
 button.on { background: var(--motor); border-color: var(--motor); color: #fff; }
 .hint { font-size: 14px; line-height: 1.35; color: var(--panel-muted); margin: 0; }
 .hint b { color: var(--panel-ink); font-weight: 500; }
-#menu { position: fixed; width: 210px; gap: 10px; }
-#menu label { display: grid; grid-template-columns: 1fr 90px; align-items: center; gap: 8px; font-size: 15px; }
-#menu input, #list input { font-family: var(--font-num); font-size: 14px; padding: 3px 6px; border: 1px solid var(--panel-line); border-radius: 4px; background: #fffaf3; color: var(--panel-ink); width: 100%; box-sizing: border-box; }
+.popup { position: fixed; width: 210px; gap: 10px; }
+.popup label { display: grid; grid-template-columns: 1fr 90px; align-items: center; gap: 8px; font-size: 15px; }
+.popup input, #list input { font-family: var(--font-num); font-size: 14px; padding: 3px 6px; border: 1px solid var(--panel-line); border-radius: 4px; background: #fffaf3; color: var(--panel-ink); width: 100%; box-sizing: border-box; }
+#baseMenu label.check { display: flex; }
+#baseMenu input[type=checkbox] { width: auto; }
 #list { left: auto; right: 16px; width: 260px; max-height: calc(100% - 32px); overflow: auto; }
 #list table { width: 100%; border-collapse: collapse; font-family: var(--font-num); font-size: 13px; font-variant-numeric: tabular-nums; }
 #list th { font-family: var(--font-ui); font-weight: 500; text-align: left; color: var(--panel-muted); letter-spacing: .06em; text-transform: uppercase; }

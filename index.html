@@ -29,7 +29,6 @@
   </div>
   <div class="btns">
     <button id="btnList">Bar list</button>
-    <button id="btnReset" title="Back to the pose of the last edit">Reset pose</button>
     <button id="btnExample">Cardboard example</button>
     <button id="btnClear" class="danger">Clear all</button>
   </div>
@@ -38,10 +37,10 @@
     <button id="btnImport">Import JSON</button>
     <input type="file" id="fileImport" accept=".json,application/json" hidden>
   </div>
-  <p class="hint"><b>Double-click</b>: new bar<br><b>Click</b> a bar: edit it<br><b>Drag</b> a bar: move it, drag an end: rotate/stretch</p>
+  <p class="hint"><b>Double-click</b>: new bar<br><b>Click</b> a bar: edit it<br><b>Drag</b> a bar: move it, drag an end: rotate/stretch<br><b>Shift+click/drag</b>, <b>Ctrl+A</b>: select several bars<br><b>Ctrl+Z</b> / <b>Ctrl+Y</b>: undo / redo</p>
 </section>
 
-<section class="panel" id="menu" hidden aria-label="Selected bar">
+<section class="panel popup" id="menu" hidden aria-label="Selected bar">
   <div class="row"><span class="label" id="menuTitle">Bar</span><button id="menuClose" aria-label="Close">✕</button></div>
   <label>Length (cm) <input type="number" id="inLen" step="0.1" min="0.5"></label>
   <label>Width (cm) <input type="number" id="inWidth" step="0.1" min="0.3"></label>
@@ -50,6 +49,23 @@
     <button id="btnDriver">Motor</button>
     <button id="btnDelete" class="danger">Delete</button>
   </div>
+</section>
+
+<section class="panel popup" id="pinMenu" hidden aria-label="Pin">
+  <div class="row"><span class="label">Pin</span><button id="pinMenuClose" aria-label="Close">✕</button></div>
+  <button id="btnAnchor">Attach to base</button>
+</section>
+
+<section class="panel popup" id="baseMenu" hidden aria-label="Fixed base">
+  <div class="row"><span class="label">Fixed base</span><button id="baseMenuClose" aria-label="Close">✕</button></div>
+  <label>Width (cm) <input type="number" id="inBaseW" step="0.1" min="1"></label>
+  <label>Height (cm) <input type="number" id="inBaseH" step="0.1" min="1"></label>
+  <span class="label">Wearer silhouette</span>
+  <label class="check"><input type="checkbox" id="inPersonOn"> Show</label>
+  <label>Height (cm) <input type="number" id="inPersonH" step="1" min="50"></label>
+  <label>Shoulders (cm) <input type="number" id="inPersonS" step="1" min="10"></label>
+  <label>Head + neck (cm) <input type="number" id="inPersonHead" step="1" min="5"></label>
+  <label>Raise (cm) <input type="number" id="inPersonDy" step="1"></label>
 </section>
 
 <section class="panel" id="list" hidden aria-label="Bar list">

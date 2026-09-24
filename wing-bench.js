@@ -61,11 +61,11 @@ const Bar = {
 };
 
 // ---------- Model ----------
-const DEFAULT_BASE = { x: 5.1, y: 26.7, w: 8.5, h: 8.5 };
+const DEFAULT_BASE = { x: 5.1, y: 26.7, w: 20, h: 20 };
 const STORE_KEY = "wing-bench-v1";
-const emptyState = () => ({ bars: [], joints: [], driverId: null, nextId: 1, base: { ...DEFAULT_BASE } });
+const DEFAULT_PERSON = { visible: false, height: 175, shoulders: 45, head: 25, raise: 0 };
+const emptyState = (person = DEFAULT_PERSON) => ({ bars: [], joints: [], driverId: null, nextId: 1, base: { ...DEFAULT_BASE }, person: { ...person } });
 let state = emptyState();
-let restPose = null;
 
 function makeBar(p, q, w = 1.6) {
   return { id: state.nextId++, x1: p.x, y1: p.y, x2: q.x, y2: q.y, len: Geo.dist(p, q), w };
@@ -89,39 +89,66 @@ function baseContacts(bar) {
   return clip ? [Geo.lerp(Bar.a(bar), Bar.b(bar), (clip[0] + clip[1]) / 2)] : [];
 }
 
-function recomputeJoints(bar) {
-  state.joints = state.joints.filter((j) => j.a !== bar.id && j.b !== bar.id);
-  for (const other of state.bars) {
-    if (other === bar) continue;
-    const p = contact(bar, other);
-    if (p) state.joints.push({ a: bar.id, sa: Bar.sOf(bar, p), b: other.id, sb: Bar.sOf(other, p) });
+// Base contacts are free pins until attached (`fixed`); only fixed ones hold the bar.
+const isAnchor = (j) => j.b === null && j.fixed;
+const isActive = (j) => j.b !== null || j.fixed;
+
+// Pins where `bar` touches the base; a pin keeps its attachment if a previous one was at the same place.
+function baseJoints(bar, previous) {
+  return baseContacts(bar).map((p) => {
+    const sa = Bar.sOf(bar, p);
+    const fixed = previous.some((j) => isAnchor(j) && j.a === bar.id && Math.abs(j.sa - sa) < bar.w);
+    return { a: bar.id, sa, b: null, fx: p.x, fy: p.y, fixed };
+  });
+}
+
+// Drop the joints linking a group of bars to other bars (and to the base unless `keepBase`); joints inside the group are kept.
+function detachJoints(ids, keepBase = false) {
+  state.joints = state.joints.filter((j) => !ids.has(j.a) && !ids.has(j.b) || ids.has(j.a) && ids.has(j.b) || keepBase && j.b === null);
+}
+
+function recomputeJoints(...bars) {
+  const ids = new Set(bars.map((b) => b.id)), previous = state.joints;
+  detachJoints(ids);
+  for (const bar of bars) {
+    for (const other of state.bars) {
+      if (ids.has(other.id)) continue;
+      const p = contact(bar, other);
+      if (p) state.joints.push({ a: bar.id, sa: Bar.sOf(bar, p), b: other.id, sb: Bar.sOf(other, p) });
+    }
+    state.joints.push(...baseJoints(bar, previous));
   }
-  for (const p of baseContacts(bar)) state.joints.push({ a: bar.id, sa: Bar.sOf(bar, p), b: null, fx: p.x, fy: p.y });
-  // Let only the edited bar settle onto its new joints.
-  solve(300, new Set([bar.id]));
-  if (state.driverId && !driverPivot()) state.driverId = null;
+  // Let only the edited bars settle onto their new joints.
+  solve(300, ids);
+  detachDriverIfFree();
 }
 
 function recomputeAll() {
+  const previous = state.joints;
   state.joints = [];
   state.bars.forEach((b, i) => {
     for (const o of state.bars.slice(i + 1)) {
       const p = contact(b, o);
       if (p) state.joints.push({ a: b.id, sa: Bar.sOf(b, p), b: o.id, sb: Bar.sOf(o, p) });
     }
-    for (const p of baseContacts(b)) state.joints.push({ a: b.id, sa: Bar.sOf(b, p), b: null, fx: p.x, fy: p.y });
+    state.joints.push(...baseJoints(b, previous));
   });
 }
 
+function detachDriverIfFree() {
+  if (state.driverId && !driverPivot()) state.driverId = null;
+}
+
 function driverPivot() {
-  return state.joints.find((j) => j.b === null && j.a === state.driverId) || null;
+  return state.joints.find((j) => isAnchor(j) && j.a === state.driverId) || null;
 }
 
 // ---------- Solver: position-based constraints ----------
 function solve(iterations, movable = null) {
   const inv = (bar) => (movable ? (movable.has(bar.id) ? 1 : 0) : bar.id === state.driverId ? 0 : 1);
+  const joints = state.joints.filter(isActive);
   for (let k = 0; k < iterations; k++) {
-    for (const j of state.joints) {
+    for (const j of joints) {
       const A = barById(j.a), B = j.b === null ? null : barById(j.b);
       const pA = Bar.pointAt(A, j.sa);
       const pB = B ? Bar.pointAt(B, j.sb) : { x: j.fx, y: j.fy };
@@ -151,7 +178,7 @@ function solve(iterations, movable = null) {
 
 function maxError() {
   let e = 0;
-  for (const j of state.joints) {
+  for (const j of state.joints.filter(isActive)) {
     const pA = Bar.pointAt(barById(j.a), j.sa);
     const pB = j.b === null ? { x: j.fx, y: j.fy } : Bar.pointAt(barById(j.b), j.sb);
     e = Math.max(e, Geo.dist(pA, pB));
@@ -200,8 +227,40 @@ function stepMotor() {
 }
 
 // ---------- Persistence ----------
+// Undo/redo stacks of serialized states; the last `past` entry is the current state.
+const History = {
+  LIMIT: 100, past: [], future: [],
+  record(snap) {
+    if (snap === this.past.at(-1)) return;
+    this.past.push(snap);
+    if (this.past.length > this.LIMIT) this.past.shift();
+    this.future = [];
+  },
+  undo() {
+    if (this.past.length < 2) return null;
+    this.future.push(this.past.pop());
+    return this.past.at(-1);
+  },
+  redo() {
+    const snap = this.future.pop();
+    if (snap) this.past.push(snap);
+    return snap ?? null;
+  },
+};
+
+function persist(snap) {
+  try { localStorage.setItem(STORE_KEY, snap); } catch (_) {}
+}
 function save() {
-  try { localStorage.setItem(STORE_KEY, serialize()); } catch (_) {}
+  const snap = serialize();
+  History.record(snap);
+  persist(snap);
+}
+function restore(snap) {
+  if (!snap) return;
+  applySnapshot(JSON.parse(snap));
+  persist(snap);
+  deselectAll(); syncMotor(); requestDraw();
 }
 function load() {
   try {
@@ -210,15 +269,15 @@ function load() {
   } catch (_) {}
   return false;
 }
-const serialize = () => JSON.stringify({ ...state, restPose }, null, 2);
+const serialize = () => JSON.stringify(state, null, 2);
 function applySnapshot(d) {
   if (!d || !Array.isArray(d.bars) || !Array.isArray(d.joints)) throw new Error("Invalid file: missing bars or joints");
-  restPose = d.restPose || null;
-  delete d.restPose;
-  state = { ...emptyState(), ...d };
+  delete d.restPose; // Legacy field from older saves.
+  d.joints.forEach((j) => { if (j.b === null && j.fixed === undefined) j.fixed = true; });
+  state = { ...emptyState(), ...d, person: { ...DEFAULT_PERSON, ...d.person } };
 }
 
-function commitEdit() { restPose = cloneBars(); save(); renderList(); }
+function commitEdit() { save(); renderList(); }
 
 // Scale the whole mechanism (bars, pivots and base) around the base's top-left corner.
 function scaleAll(k) {
@@ -234,15 +293,16 @@ function scaleAll(k) {
   commitEdit(); syncMotor(); fitView(); requestDraw();
 }
 
-// Mechanism reproduced from the cardboard prototype photo (cm).
+// Cardboard prototype linkage with a 45 cm wing spar (cm).
 function loadExample() {
-  state = emptyState();
+  state = emptyState(state.person);
   const P = (x, y) => ({ x, y });
-  const A = P(12.18, 28.27), B = P(10.07, 34.16), C = P(16.73, 30.78), D = P(16.0, 37.09);
-  const E = P(21.22, 39.67), T1 = P(19.0, 11.67), T2 = P(26.11, 14.56);
-  const bars = [makeBar(A, C), makeBar(B, E), makeBar(T1, D), makeBar(T2, E), makeBar(T1, T2)];
+  const A = P(23.78, 33.12), B = P(21.67, 39.01), C = P(27.86, 36.34), D = P(27.19, 42.66);
+  const E = P(32.04, 45.87), T1 = P(29.89, 17.21), T2 = P(36.71, 20.72), TIP = P(69.92, 37.76);
+  const bars = [makeBar(A, C), makeBar(B, E), makeBar(T1, D), makeBar(T2, E), makeBar(T1, TIP)];
   state.bars.push(...bars);
   recomputeAll();
+  state.joints.filter((j) => j.b === null).forEach((j) => (j.fixed = true));
   state.driverId = bars[1].id;
   commitEdit();
   fitView();
@@ -257,7 +317,7 @@ const toScreen = (p) => ({ x: p.x * view.scale + view.ox, y: p.y * view.scale + 
 const toWorld = (x, y) => ({ x: (x - view.ox) / view.scale, y: (y - view.oy) / view.scale });
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const COLORS = {};
-["--mat-line", "--mat-line-strong", "--mat-ink", "--kraft", "--kraft-dark", "--pin", "--motor"].forEach((n) => (COLORS[n] = css(n)));
+["--mat-line", "--mat-line-strong", "--mat-ink", "--kraft", "--kraft-dark", "--pin", "--pin-fixed", "--motor", "--person"].forEach((n) => (COLORS[n] = css(n)));
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -268,6 +328,7 @@ function resize() {
 
 function fitView() {
   const pts = state.bars.flatMap((b) => [Bar.a(b), Bar.b(b)]).concat([{ x: state.base.x, y: state.base.y }, { x: state.base.x + state.base.w, y: state.base.y + state.base.h }]);
+  if (state.person.visible) pts.push(...Person.bounds());
   const minX = Math.min(...pts.map((p) => p.x)) - 3, maxX = Math.max(...pts.map((p) => p.x)) + 3;
   const minY = Math.min(...pts.map((p) => p.y)) - 3, maxY = Math.max(...pts.map((p) => p.y)) + 3;
   const panelW = innerWidth > 700 ? 340 : 0, listW = innerWidth > 700 && !$("list").hidden ? 290 : 0;
@@ -277,24 +338,74 @@ function fitView() {
   view.oy = (innerHeight - (maxY - minY) * view.scale) / 2 - minY * view.scale;
 }
 
+// Grid step (cm) grows with zoom-out so lines and labels stay readable.
 function drawGrid() {
   const tl = toWorld(0, 0), br = toWorld(innerWidth, innerHeight);
+  const minor = [1, 5, 10, 50, 100].find((s) => s * view.scale >= 6) ?? 100, major = minor * 5;
   ctx.lineWidth = 1;
   ctx.font = `11px ${css("--font-num")}`;
   ctx.fillStyle = COLORS["--mat-ink"];
-  for (let x = Math.floor(tl.x); x <= br.x; x++) {
+  const lines = (from, to, draw) => {
+    for (let v = Math.floor(from / minor) * minor; v <= to; v += minor) {
+      ctx.strokeStyle = v % major === 0 ? COLORS["--mat-line-strong"] : COLORS["--mat-line"];
+      draw(v, v % major === 0);
+    }
+  };
+  lines(tl.x, br.x, (x, label) => {
     const sx = Math.round(toScreen({ x, y: 0 }).x) + 0.5;
-    ctx.strokeStyle = x % 5 === 0 ? COLORS["--mat-line-strong"] : COLORS["--mat-line"];
     ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, innerHeight); ctx.stroke();
-    if (x % 5 === 0) ctx.fillText(x, sx + 3, innerHeight - 8);
-  }
-  for (let y = Math.floor(tl.y); y <= br.y; y++) {
+    if (label) ctx.fillText(x, sx + 3, innerHeight - 8);
+  });
+  lines(tl.y, br.y, (y, label) => {
     const sy = Math.round(toScreen({ x: 0, y }).y) + 0.5;
-    ctx.strokeStyle = y % 5 === 0 ? COLORS["--mat-line-strong"] : COLORS["--mat-line"];
     ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(innerWidth, sy); ctx.stroke();
-    if (y % 5 === 0) ctx.fillText(y, innerWidth - 24, sy - 3);
-  }
+    if (label) ctx.fillText(y, innerWidth - 24, sy - 3);
+  });
 }
+
+// ---------- Wearer silhouette (restroom-sign pictogram, back view) ----------
+// Proportions measured on the reference sign. Widths are fractions of the shoulder
+// width, heights are fractions of the body below the neck.
+const Person = {
+  ARM: 0.23, SLIT: 0, LEG_GAP: 0.045, CORNER: 0.136, // x / shoulders
+  LIMB_END: 0.2, // corner radius of hands and feet / limb width
+  SLIT_TOP: 0.143, ARM_END: 0.472, CROTCH: 0.466, BACK: 0.2, // y / body length
+  HEAD: 0.85, // head diameter / (skull top to neck base)
+
+  // Body frame: origin at the top of the head on the spine, y down, in cm.
+  frame() {
+    const { height: H, shoulders: S, raise } = state.person;
+    const neck = Math.min(state.person.head, H / 2), L = H - neck;
+    const c = { x: state.base.x + state.base.w / 2, y: state.base.y + state.base.h / 2 };
+    return { S, neck, L, o: { x: c.x, y: c.y - neck - L * Person.BACK + raise } };
+  },
+  bounds() {
+    const { S, o } = Person.frame();
+    return [{ x: o.x - S / 2, y: o.y }, { x: o.x + S / 2, y: o.y + state.person.height }];
+  },
+  // All parts in one path: they overlap, and a single fill paints the union once.
+  path() {
+    const { S, neck, L, o } = Person.frame(), P = Person;
+    const arm = S * P.ARM, body = S - 2 * (arm + S * P.SLIT), leg = (body - S * P.LEG_GAP) / 2, r = S * P.CORNER;
+    const path = new Path2D();
+    const rect = (x, y, w, h, radii = [0]) => {
+      const p = toScreen({ x: o.x + x, y: o.y + y });
+      path.roundRect(p.x, p.y, w * view.scale, h * view.scale, radii.map((v) => v * view.scale));
+    };
+    const d = neck * P.HEAD, head = toScreen({ x: o.x, y: o.y + d / 2 });
+    path.arc(head.x, head.y, (d / 2) * view.scale, 0, Math.PI * 2);
+    rect(-S / 2, neck, S, L * P.SLIT_TOP, [r, r, 0, 0]);
+    for (const x of [-S / 2, S / 2 - arm]) rect(x, neck + r, arm, L * P.ARM_END - r, [0, 0, arm * P.LIMB_END, arm * P.LIMB_END]);
+    rect(-body / 2, neck, body, L * P.CROTCH);
+    for (const x of [-body / 2, body / 2 - leg]) rect(x, neck + L * P.CROTCH - 1, leg, L * (1 - P.CROTCH) + 1, [0, 0, leg * P.LIMB_END, leg * P.LIMB_END]);
+    return path;
+  },
+  draw() {
+    if (!state.person.visible) return;
+    ctx.fillStyle = COLORS["--person"];
+    ctx.fill(Person.path(), "nonzero");
+  },
+};
 
 function drawBase() {
   const p = toScreen(state.base), w = state.base.w * view.scale, h = state.base.h * view.scale;
@@ -313,7 +424,7 @@ function drawBase() {
 function drawBar(b) {
   const a = toScreen(Bar.a(b)), c = toScreen(Bar.b(b));
   const ang = Math.atan2(c.y - a.y, c.x - a.x), L = b.len * view.scale, W = b.w * view.scale;
-  const isDriver = b.id === state.driverId, isSel = b.id === ui.selectedId;
+  const isDriver = b.id === state.driverId, isSel = isSelected(b.id);
   ctx.save();
   ctx.translate(a.x, a.y); ctx.rotate(ang);
   ctx.fillStyle = COLORS["--kraft"];
@@ -346,7 +457,7 @@ function drawBar(b) {
 function drawJoint(j) {
   const p = toScreen(Bar.pointAt(barById(j.a), j.sa));
   const r = Math.max(4, view.scale * 0.28);
-  ctx.fillStyle = COLORS["--pin"];
+  ctx.fillStyle = COLORS[j.fixed ? "--pin-fixed" : "--pin"];
   ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = "#3a1010";
   ctx.beginPath(); ctx.arc(p.x, p.y, r * 0.3, 0, Math.PI * 2); ctx.fill();
@@ -359,9 +470,20 @@ function drawJoint(j) {
 function draw() {
   ctx.clearRect(0, 0, innerWidth, innerHeight);
   drawGrid();
+  Person.draw();
   drawBase();
   state.bars.forEach(drawBar);
   state.joints.forEach(drawJoint);
+  if (ui.drag?.box) drawSelectionBox(ui.drag);
+}
+
+function drawSelectionBox(d) {
+  const a = toScreen(d.start), b = toScreen(d.cur);
+  ctx.setLineDash([5, 4]); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1;
+  ctx.fillStyle = "rgba(255,255,255,.08)";
+  ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
+  ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+  ctx.setLineDash([]);
 }
 
 let drawQueued = false;
@@ -381,7 +503,7 @@ function loop() {
 // ---------- UI ----------
 const $ = (id) => document.getElementById(id);
 const ui = {
-  slider: $("slider"), menu: $("menu"), selectedId: null, hoverId: null, drag: null, clearArmed: false,
+  slider: $("slider"), menu: $("menu"), selectedId: null, group: new Set(), hoverId: null, drag: null, clearArmed: false,
 };
 
 function updatePanel() {
@@ -395,6 +517,7 @@ function updatePanel() {
 }
 
 function openMenu(bar, sx, sy) {
+  ui.group.clear();
   ui.selectedId = bar.id;
   $("menuTitle").textContent = `Bar #${bar.id}`;
   $("inLen").value = bar.len.toFixed(1);
@@ -404,14 +527,71 @@ function openMenu(bar, sx, sy) {
   const btn = $("btnDriver");
   btn.classList.toggle("on", isDriver);
   btn.textContent = isDriver ? "Motor ✓" : "Set as motor";
-  ui.menu.hidden = false;
+  showPanelAt(ui.menu, sx, sy);
   renderList();
-  const r = ui.menu.getBoundingClientRect();
-  ui.menu.style.left = Math.max(16, Math.min(sx + 16, innerWidth - r.width - 16)) + "px";
-  ui.menu.style.top = Math.max(16, Math.min(sy + 16, innerHeight - r.height - 16)) + "px";
   requestDraw();
 }
-function closeMenu() { ui.menu.hidden = true; ui.selectedId = null; renderList(); requestDraw(); }
+const hidePopups = () => document.querySelectorAll(".popup").forEach((p) => (p.hidden = true));
+function closeMenu() { hidePopups(); ui.selectedId = null; ui.pin = null; renderList(); requestDraw(); }
+function deselectAll() { ui.group.clear(); closeMenu(); }
+const isSelected = (id) => id === ui.selectedId || ui.group.has(id);
+
+// Shift/Ctrl+click: add or remove a bar from the multi-selection (the edited bar joins it).
+function toggleInGroup(bar) {
+  const current = ui.selectedId;
+  closeMenu();
+  if (current) ui.group.add(current);
+  if (!ui.group.delete(bar.id)) ui.group.add(bar.id);
+  requestDraw();
+}
+
+function deleteBars(ids) {
+  state.bars = state.bars.filter((b) => !ids.has(b.id));
+  state.joints = state.joints.filter((j) => !ids.has(j.a) && !ids.has(j.b));
+  if (ids.has(state.driverId)) state.driverId = null;
+  deselectAll(); commitEdit(); syncMotor();
+}
+
+function showPanelAt(panel, sx, sy) {
+  hidePopups();
+  panel.hidden = false;
+  const r = panel.getBoundingClientRect();
+  panel.style.left = Math.max(16, Math.min(sx + 16, innerWidth - r.width - 16)) + "px";
+  panel.style.top = Math.max(16, Math.min(sy + 16, innerHeight - r.height - 16)) + "px";
+}
+
+function openBaseMenu(sx, sy) {
+  closeMenu();
+  const { base, person } = state;
+  $("inBaseW").value = base.w.toFixed(1);
+  $("inBaseH").value = base.h.toFixed(1);
+  $("inPersonOn").checked = person.visible;
+  $("inPersonH").value = person.height;
+  $("inPersonS").value = person.shoulders;
+  $("inPersonHead").value = person.head;
+  $("inPersonDy").value = person.raise;
+  showPanelAt($("baseMenu"), sx, sy);
+}
+
+// Bind a numeric input to a field; `min` clamps it, invalid input keeps the old value.
+function bindNumber(id, obj, key, min, after) {
+  $(id).addEventListener("change", (e) => {
+    const v = parseFloat(e.target.value);
+    if (Number.isFinite(v)) obj()[key] = min === null ? v : Math.max(min, v);
+    e.target.value = obj()[key];
+    after();
+  });
+}
+const onBaseResized = () => { recomputeAll(); detachDriverIfFree(); commitEdit(); syncMotor(); requestDraw(); };
+const onPersonChanged = () => { save(); if (state.person.visible) fitView(); requestDraw(); };
+bindNumber("inBaseW", () => state.base, "w", 1, onBaseResized);
+bindNumber("inBaseH", () => state.base, "h", 1, onBaseResized);
+bindNumber("inPersonH", () => state.person, "height", 50, onPersonChanged);
+bindNumber("inPersonS", () => state.person, "shoulders", 10, onPersonChanged);
+bindNumber("inPersonHead", () => state.person, "head", 5, onPersonChanged);
+bindNumber("inPersonDy", () => state.person, "raise", null, onPersonChanged);
+$("inPersonOn").addEventListener("change", (e) => { state.person.visible = e.target.checked; save(); fitView(); requestDraw(); });
+$("baseMenuClose").addEventListener("click", closeMenu);
 
 function editSelected(fn) {
   const bar = barById(ui.selectedId);
@@ -432,23 +612,34 @@ $("btnDriver").addEventListener("click", () => {
   const bar = barById(ui.selectedId);
   if (!bar) return;
   if (state.driverId === bar.id) state.driverId = null;
-  else if (state.joints.some((j) => j.b === null && j.a === bar.id)) state.driverId = bar.id;
+  else if (state.joints.some((j) => isAnchor(j) && j.a === bar.id)) state.driverId = bar.id;
   else { $("status").className = "chip bad"; $("status").textContent = "The motor must be pinned to the base"; return; }
   save(); syncMotor(); openMenu(bar, parseFloat(ui.menu.style.left) - 16, parseFloat(ui.menu.style.top) - 16);
 });
-$("btnDelete").addEventListener("click", () => {
-  const id = ui.selectedId;
-  state.bars = state.bars.filter((b) => b.id !== id);
-  state.joints = state.joints.filter((j) => j.a !== id && j.b !== id);
-  if (state.driverId === id) state.driverId = null;
+$("btnDelete").addEventListener("click", () => deleteBars(new Set([ui.selectedId])));
+$("menuClose").addEventListener("click", closeMenu);
+
+function openPinMenu(joint, sx, sy) {
+  closeMenu();
+  ui.pin = joint;
+  $("btnAnchor").textContent = joint.fixed ? "Detach from base" : "Attach to base";
+  showPanelAt($("pinMenu"), sx, sy);
+}
+$("btnAnchor").addEventListener("click", () => {
+  const j = ui.pin;
+  if (!j) return;
+  // Anchor where the pin is now: the motor may have moved the bar since the contact was found.
+  const p = Bar.pointAt(barById(j.a), j.sa);
+  Object.assign(j, { fx: p.x, fy: p.y, fixed: !j.fixed });
+  detachDriverIfFree();
   closeMenu(); commitEdit(); syncMotor();
 });
-$("menuClose").addEventListener("click", closeMenu);
+$("pinMenuClose").addEventListener("click", closeMenu);
 
 function renderList() {
   $("listBody").replaceChildren(...state.bars.map((b) => {
     const tr = document.createElement("tr");
-    tr.classList.toggle("sel", b.id === ui.selectedId);
+    tr.classList.toggle("sel", isSelected(b.id));
     tr.innerHTML = `<td>#${b.id}${b.id === state.driverId ? " ⚙" : ""}</td><td>${b.len.toFixed(1)}</td><td>${b.w.toFixed(1)}</td>`;
     tr.addEventListener("click", () => {
       const m = toScreen(Geo.lerp(Bar.a(b), Bar.b(b), 0.5));
@@ -494,7 +685,6 @@ $("btnScale").addEventListener("click", () => {
 });
 
 ui.slider.addEventListener("input", () => { motor.target = +ui.slider.value; });
-$("btnReset").addEventListener("click", () => { if (restPose) { restoreBars(restPose); syncMotor(); requestDraw(); } });
 $("btnExample").addEventListener("click", () => { closeMenu(); loadExample(); requestDraw(); });
 $("btnClear").addEventListener("click", (e) => {
   if (!ui.clearArmed) {
@@ -503,7 +693,7 @@ $("btnClear").addEventListener("click", (e) => {
     return;
   }
   ui.clearArmed = false; e.target.textContent = "Clear all";
-  state = emptyState();
+  state = emptyState(state.person);
   closeMenu(); commitEdit(); syncMotor();
 });
 
@@ -524,11 +714,15 @@ function hitBar(p) {
   }
   return null;
 }
-// Snap a point to another bar's endpoint when close enough.
-function snap(p, self) {
+function hitBasePin(p) {
+  const r = (Math.max(4, view.scale * 0.28) + 3) / view.scale;
+  return state.joints.find((j) => j.b === null && Geo.dist(p, Bar.pointAt(barById(j.a), j.sa)) < r) || null;
+}
+// Snap a point to the endpoint of a bar outside `ids` when close enough.
+function snap(p, ids) {
   const r = 10 / view.scale;
   for (const b of state.bars) {
-    if (b === self) continue;
+    if (ids.has(b.id)) continue;
     for (const e of [Bar.a(b), Bar.b(b)]) if (Geo.dist(p, e) < r) return e;
   }
   return p;
@@ -539,11 +733,18 @@ const pointer = (e) => ({ sx: e.clientX, sy: e.clientY, w: toWorld(e.clientX, e.
 canvas.addEventListener("pointerdown", (e) => {
   canvas.setPointerCapture(e.pointerId);
   const { sx, sy, w } = pointer(e);
-  const ep = hitEndpoint(w), bar = ep ? ep.bar : hitBar(w);
-  if (bar) state.joints = state.joints.filter((j) => j.a !== bar.id && j.b !== bar.id);
-  ui.drag = bar
-    ? { bar, end: ep?.end ?? 0, start: w, sx, sy, orig: { ...bar }, moved: false }
-    : { pan: true, sx, sy, ox: view.ox, oy: view.oy, moved: false };
+  const ep = hitEndpoint(w), bar = ep ? ep.bar : hitBar(w), multi = e.shiftKey || e.ctrlKey || e.metaKey;
+  if (bar && multi) { toggleInGroup(bar); return; }
+  if (!bar) {
+    ui.drag = multi ? { box: true, start: w, cur: w, sx, sy, moved: false } : { pan: true, sx, sy, ox: view.ox, oy: view.oy, moved: false };
+    return;
+  }
+  // Dragging the body of a selected bar moves the whole selection; an endpoint only reshapes its bar.
+  const movers = !ep && ui.group.has(bar.id) ? state.bars.filter((b) => ui.group.has(b.id)) : [bar];
+  const ids = new Set(movers.map((b) => b.id));
+  const pin = hitBasePin(w);
+  detachJoints(ids, true);
+  ui.drag = { bar, ids, pin, movers: movers.map((b) => ({ bar: b, orig: { ...b } })), end: ep?.end ?? 0, start: w, sx, sy, orig: { ...bar }, moved: false };
   requestDraw();
 });
 
@@ -553,23 +754,24 @@ canvas.addEventListener("pointermove", (e) => {
   if (!d) {
     const hit = hitEndpoint(w)?.bar || hitBar(w);
     const id = hit ? hit.id : null;
-    canvas.style.cursor = hitEndpoint(w) ? "crosshair" : hit ? "move" : "default";
+    canvas.style.cursor = hitEndpoint(w) ? "crosshair" : hit ? "move" : Geo.inRect(w, state.base) ? "pointer" : "default";
     if (id !== ui.hoverId) { ui.hoverId = id; requestDraw(); }
     return;
   }
   if (Math.hypot(sx - d.sx, sy - d.sy) > 3) d.moved = true;
   if (!d.moved) return;
   if (d.pan) { view.ox = d.ox + sx - d.sx; view.oy = d.oy + sy - d.sy; }
+  else if (d.box) d.cur = w;
   else if (d.end) {
-    const p = snap(w, d.bar), o = d.end === 1 ? { x: d.orig.x2, y: d.orig.y2 } : { x: d.orig.x1, y: d.orig.y1 };
+    const p = snap(w, d.ids), o = d.end === 1 ? { x: d.orig.x2, y: d.orig.y2 } : { x: d.orig.x1, y: d.orig.y1 };
     if (d.end === 1) Bar.setEnds(d.bar, p, o); else Bar.setEnds(d.bar, o, p);
     d.bar.len = Geo.dist(Bar.a(d.bar), Bar.b(d.bar));
   } else {
     const delta = Geo.sub(w, d.start);
-    let a = Geo.add({ x: d.orig.x1, y: d.orig.y1 }, delta), c = Geo.add({ x: d.orig.x2, y: d.orig.y2 }, delta);
-    const sa = snap(a, d.bar), sc = snap(c, d.bar);
-    const shift = sa !== a ? Geo.sub(sa, a) : sc !== c ? Geo.sub(sc, c) : { x: 0, y: 0 };
-    Bar.setEnds(d.bar, Geo.add(a, shift), Geo.add(c, shift));
+    const moved = (o) => [Geo.add({ x: o.x1, y: o.y1 }, delta), Geo.add({ x: o.x2, y: o.y2 }, delta)];
+    const [a, c] = moved(d.orig), sa = snap(a, d.ids), sc = snap(c, d.ids);
+    const shift = Geo.add(delta, sa !== a ? Geo.sub(sa, a) : sc !== c ? Geo.sub(sc, c) : { x: 0, y: 0 });
+    for (const m of d.movers) Bar.setEnds(m.bar, Geo.add({ x: m.orig.x1, y: m.orig.y1 }, shift), Geo.add({ x: m.orig.x2, y: m.orig.y2 }, shift));
   }
   requestDraw();
 });
@@ -578,11 +780,18 @@ canvas.addEventListener("pointerup", (e) => {
   const d = ui.drag;
   ui.drag = null;
   if (!d) return;
-  if (d.bar) {
-    recomputeJoints(d.bar);
+  if (d.box) {
+    const r = { x: Math.min(d.start.x, d.cur.x), y: Math.min(d.start.y, d.cur.y), w: Math.abs(d.cur.x - d.start.x), h: Math.abs(d.cur.y - d.start.y) };
+    state.bars.filter((b) => Geo.inRect(Bar.a(b), r) && Geo.inRect(Bar.b(b), r)).forEach((b) => ui.group.add(b.id));
+  } else if (d.bar) {
+    recomputeJoints(...d.movers.map((m) => m.bar));
     if (d.moved) { commitEdit(); syncMotor(); if (!ui.menu.hidden && ui.selectedId === d.bar.id) openMenu(d.bar, e.clientX, e.clientY); }
+    else if (d.pin) openPinMenu(state.joints.find((j) => j.b === null && j.a === d.pin.a && Math.abs(j.sa - d.pin.sa) < 1e-6) || d.pin, e.clientX, e.clientY);
     else openMenu(d.bar, e.clientX, e.clientY);
-  } else if (!d.moved) closeMenu();
+  } else if (!d.moved) {
+    if (Geo.inRect(toWorld(e.clientX, e.clientY), state.base)) openBaseMenu(e.clientX, e.clientY);
+    else deselectAll();
+  }
   requestDraw();
 });
 
@@ -606,13 +815,28 @@ canvas.addEventListener("wheel", (e) => {
 }, { passive: false });
 
 addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeMenu();
-  if ((e.key === "Delete" || e.key === "Backspace") && ui.selectedId && document.activeElement.tagName !== "INPUT") $("btnDelete").click();
+  if (e.key === "Escape") deselectAll();
+  const key = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && (key === "z" || key === "y") && document.activeElement.tagName !== "INPUT") {
+    e.preventDefault();
+    restore(key === "y" || e.shiftKey ? History.redo() : History.undo());
+  }
+  if ((e.ctrlKey || e.metaKey) && key === "a" && document.activeElement.tagName !== "INPUT") {
+    e.preventDefault();
+    closeMenu();
+    state.bars.forEach((b) => ui.group.add(b.id));
+    requestDraw();
+  }
+  if ((e.key === "Delete" || e.key === "Backspace") && document.activeElement.tagName !== "INPUT") {
+    const ids = ui.group.size ? new Set(ui.group) : new Set(ui.selectedId ? [ui.selectedId] : []);
+    if (ids.size) deleteBars(ids);
+  }
 });
 addEventListener("resize", resize);
 
 // ---------- Boot ----------
 resize();
 if (load() && state.bars.length) { fitView(); syncMotor(); } else loadExample();
+History.record(serialize());
 updatePanel();
 requestAnimationFrame(loop);
