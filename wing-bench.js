@@ -349,21 +349,22 @@ function drawGrid() {
   ctx.lineWidth = 1;
   ctx.font = `11px ${css("--font-num")}`;
   ctx.fillStyle = COLORS["--mat-ink"];
-  const lines = (from, to, draw) => {
-    for (let v = Math.floor(from / minor) * minor; v <= to; v += minor) {
+  const o = { x: state.base.x + state.base.w / 2, y: state.base.y + state.base.h / 2 };
+  const lines = (from, to, origin, draw) => {
+    for (let v = Math.floor((from - origin) / minor) * minor; v <= to - origin; v += minor) {
       ctx.strokeStyle = v % major === 0 ? COLORS["--mat-line-strong"] : COLORS["--mat-line"];
-      draw(v, v % major === 0);
+      draw(origin + v, v % major === 0 ? v : null);
     }
   };
-  lines(tl.x, br.x, (x, label) => {
+  lines(tl.x, br.x, o.x, (x, label) => {
     const sx = Math.round(toScreen({ x, y: 0 }).x) + 0.5;
     ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, innerHeight); ctx.stroke();
-    if (label) ctx.fillText(x, sx + 3, innerHeight - 8);
+    if (label !== null) ctx.fillText(label, sx + 3, innerHeight - 8);
   });
-  lines(tl.y, br.y, (y, label) => {
+  lines(tl.y, br.y, o.y, (y, label) => {
     const sy = Math.round(toScreen({ x: 0, y }).y) + 0.5;
     ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(innerWidth, sy); ctx.stroke();
-    if (label) ctx.fillText(y, innerWidth - 24, sy - 3);
+    if (label !== null) ctx.fillText(label, innerWidth - 24, sy - 3);
   });
 }
 
