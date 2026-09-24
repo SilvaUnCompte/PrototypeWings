@@ -54,11 +54,12 @@ button.on { background: var(--motor); border-color: var(--motor); color: #fff; }
 .popup input, #list input { font-family: var(--font-num); font-size: 14px; padding: 3px 6px; border: 1px solid var(--panel-line); border-radius: 4px; background: #fffaf3; color: var(--panel-ink); width: 100%; box-sizing: border-box; }
 #baseMenu label.check { display: flex; }
 #baseMenu input[type=checkbox] { width: auto; }
-#list { left: auto; right: 16px; width: 260px; max-height: calc(100% - 32px); overflow: auto; }
+#list { left: auto; right: 16px; width: 380px; max-height: calc(100% - 32px); overflow: auto; }
 #list table { width: 100%; border-collapse: collapse; font-family: var(--font-num); font-size: 13px; font-variant-numeric: tabular-nums; }
 #list th { font-family: var(--font-ui); font-weight: 500; text-align: left; color: var(--panel-muted); letter-spacing: .06em; text-transform: uppercase; }
 #list th, #list td { padding: 4px 6px; border-bottom: 1px solid var(--panel-line); }
 #list td:not(:first-child), #list th:not(:first-child) { text-align: right; }
+#list th:last-child, #list td:last-child { border-left: 2px solid var(--panel-line); padding-left: 10px; }
 #list tbody tr { cursor: pointer; }
 #list tbody tr:hover, #list tbody tr.sel { background: #e8dccb; }
 #list .scale { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; font-size: 15px; }

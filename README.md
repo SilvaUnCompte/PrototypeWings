@@ -2,7 +2,7 @@
 
 A small browser tool to design and test the linkage of a moving wing. It simulates how the whole wing moves and where it gets stuck, and shows it at scale on the wearer's back.
 
-<img src="screenshots/overview_v1.png" width="500" alt="Overview of the bench with the cardboard example">
+<img src="screenshots/overview_v2.png" width="500" alt="Overview of the bench with the cardboard example">
 
 ## How to use it
 
@@ -13,11 +13,11 @@ A small browser tool to design and test the linkage of a moving wing. It simulat
 5. **Fix to the base**: a bar touching the brown square gets a free pin (white ring). Click it and choose **Attach to base**: the pin turns grey and holds the bar.
 6. **Edit a bar**: click it to set its length, width and angle, delete it, or make it the motor (the motor needs a pin attached to the base).
 
-<img src="screenshots/edit_v1.png" width="500" alt="Editing a bar and the bar list">
+<img src="screenshots/edit_v2.png" width="500" alt="Editing a bar and the bar list">
 
 7. **Run the motor**: move the slider. The status shows *Moving freely*, or *Jammed* when the wing gets stuck.
 
-<img src="screenshots/motor_v1.png" width="500" alt="The wing after turning the motor">
+<img src="screenshots/motor_v2.png" width="500" alt="The wing after turning the motor">
 
 ## Wearer silhouette
 
@@ -30,7 +30,7 @@ Click the brown base and tick **Show** to display a semi-transparent silhouette 
 
 The same menu sets the base's width and height.
 
-<img src="screenshots/silhouette_v1.png" width="500" alt="The wing on the wearer silhouette, with the base menu">
+<img src="screenshots/silhouette_v2.png" width="500" alt="The wing on the wearer silhouette, with the base menu">
 
 ## Shortcuts
 
@@ -41,8 +41,8 @@ The same menu sets the base's width and height.
 
 ## Other buttons
 
-- **Bar list**: all bars with their length and width, the total length of cardboard needed, and a scale factor to resize the whole wing.
-- **Cardboard example**: reload the example prototype.
+- **Bar list**: the cutting list — each strip's cut length and width, and its hole positions (centre of each Ø 0.8 cm hole from the first cut end; end holes sit 1 cm from the edge), the total length of cardboard needed, and a scale factor to resize the whole wing.
+- **Cardboard example**: load the example prototype; only shown when there is no bar (e.g. after *Clear all*).
 - **Export / Import JSON**: save a design to a file and load it back later.
 - **Clear all**: start from scratch (click twice to confirm).
 

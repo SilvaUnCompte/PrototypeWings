@@ -39,7 +39,11 @@ const Geo = {
 };
 
 // ---------- Bar helpers (world units = cm, y down) ----------
+// A bar's `len` is the span between its end pins; the cut strip adds `margin` past each end pin.
+const HOLE = { diameter: 0.8, margin: 1 };
+
 const Bar = {
+  cutLength: (b) => b.len + 2 * HOLE.margin,
   a: (b) => ({ x: b.x1, y: b.y1 }),
   b: (b) => ({ x: b.x2, y: b.y2 }),
   pointAt: (b, s) => Geo.lerp(Bar.a(b), Bar.b(b), b.len ? s / b.len : 0),
@@ -331,7 +335,7 @@ function fitView() {
   if (state.person.visible) pts.push(...Person.bounds());
   const minX = Math.min(...pts.map((p) => p.x)) - 3, maxX = Math.max(...pts.map((p) => p.x)) + 3;
   const minY = Math.min(...pts.map((p) => p.y)) - 3, maxY = Math.max(...pts.map((p) => p.y)) + 3;
-  const panelW = innerWidth > 700 ? 340 : 0, listW = innerWidth > 700 && !$("list").hidden ? 290 : 0;
+  const panelW = innerWidth > 700 ? 340 : 0, listW = innerWidth > 700 && !$("list").hidden ? $("list").offsetWidth + 30 : 0;
   const freeW = innerWidth - panelW - listW;
   view.scale = Math.min(freeW / (maxX - minX), innerHeight / (maxY - minY));
   view.ox = panelW + (freeW - (maxX - minX) * view.scale) / 2 - minX * view.scale;
@@ -431,15 +435,16 @@ function drawBar(b) {
   ctx.strokeStyle = isDriver ? COLORS["--motor"] : COLORS["--kraft-dark"];
   ctx.lineWidth = isDriver ? 3 : 1;
   ctx.shadowColor = "rgba(0,0,0,.3)"; ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
-  ctx.fillRect(-W / 2, -W / 2, L + W, W);
+  const M = HOLE.margin * view.scale;
+  ctx.fillRect(-M, -W / 2, L + 2 * M, W);
   ctx.shadowColor = "transparent";
-  ctx.strokeRect(-W / 2, -W / 2, L + W, W);
+  ctx.strokeRect(-M, -W / 2, L + 2 * M, W);
   // Corrugation line, like the cardboard strips.
   ctx.strokeStyle = "rgba(90,60,30,.25)"; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(-W / 2, -W * 0.18); ctx.lineTo(L + W / 2, -W * 0.18); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-M, -W * 0.18); ctx.lineTo(L + M, -W * 0.18); ctx.stroke();
   if (isSel) {
     ctx.setLineDash([6, 4]); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
-    ctx.strokeRect(-W / 2 - 3, -W / 2 - 3, L + W + 6, W + 6);
+    ctx.strokeRect(-M - 3, -W / 2 - 3, L + 2 * M + 6, W + 6);
     ctx.setLineDash([]);
   }
   if (isSel || b.id === ui.hoverId) {
@@ -454,9 +459,11 @@ function drawBar(b) {
   }
 }
 
+const pinRadius = () => Math.max(4, view.scale * HOLE.diameter / 2);
+
 function drawJoint(j) {
   const p = toScreen(Bar.pointAt(barById(j.a), j.sa));
-  const r = Math.max(4, view.scale * 0.28);
+  const r = pinRadius();
   ctx.fillStyle = COLORS[j.fixed ? "--pin-fixed" : "--pin"];
   ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = "#3a1010";
@@ -514,6 +521,7 @@ function updatePanel() {
   st.className = "chip " + (!d ? "" : motor.blocked ? "bad" : "ok");
   st.textContent = !d ? "No motor bar" : motor.blocked ? "Jammed at this position" : "Moving freely";
   $("counts").textContent = `${state.bars.length} bars · ${state.joints.length} pins`;
+  $("btnExample").hidden = state.bars.length > 0;
 }
 
 function openMenu(bar, sx, sy) {
@@ -636,18 +644,24 @@ $("btnAnchor").addEventListener("click", () => {
 });
 $("pinMenuClose").addEventListener("click", closeMenu);
 
+// Hole centres along the cut strip (cm from its first cut end), one per distinct active pin.
+function holes(bar) {
+  const s = state.joints.filter(isActive).flatMap((j) => (j.a === bar.id ? [j.sa] : j.b === bar.id ? [j.sb] : [])).map((v) => v + HOLE.margin);
+  return s.sort((x, y) => x - y).filter((v, i, all) => i === 0 || v - all[i - 1] > 0.05);
+}
+
 function renderList() {
   $("listBody").replaceChildren(...state.bars.map((b) => {
     const tr = document.createElement("tr");
     tr.classList.toggle("sel", isSelected(b.id));
-    tr.innerHTML = `<td>#${b.id}${b.id === state.driverId ? " ⚙" : ""}</td><td>${b.len.toFixed(1)}</td><td>${b.w.toFixed(1)}</td>`;
+    tr.innerHTML = `<td>#${b.id}${b.id === state.driverId ? " ⚙" : ""}</td><td>${Bar.cutLength(b).toFixed(1)}</td><td>${b.w.toFixed(1)}</td><td>${holes(b).map((v) => v.toFixed(1)).join(" · ")}</td>`;
     tr.addEventListener("click", () => {
       const m = toScreen(Geo.lerp(Bar.a(b), Bar.b(b), 0.5));
       openMenu(b, m.x, m.y);
     });
     return tr;
   }));
-  $("listTotal").textContent = state.bars.reduce((t, b) => t + b.len, 0).toFixed(1);
+  $("listTotal").textContent = state.bars.reduce((t, b) => t + Bar.cutLength(b), 0).toFixed(1);
 }
 // Published artifact: platform download prompt. Local file: plain blob link.
 const downloadsReady = window.claude?.use ? window.claude.use("downloads") : Promise.resolve(null);
@@ -710,12 +724,12 @@ function hitEndpoint(p) {
 function hitBar(p) {
   for (const b of [...state.bars].reverse()) {
     const l = Bar.local(b, p);
-    if (l.along >= -b.w / 2 && l.along <= b.len + b.w / 2 && Math.abs(l.across) <= b.w / 2) return b;
+    if (l.along >= -HOLE.margin && l.along <= b.len + HOLE.margin && Math.abs(l.across) <= b.w / 2) return b;
   }
   return null;
 }
 function hitBasePin(p) {
-  const r = (Math.max(4, view.scale * 0.28) + 3) / view.scale;
+  const r = (pinRadius() + 3) / view.scale;
   return state.joints.find((j) => j.b === null && Geo.dist(p, Bar.pointAt(barById(j.a), j.sa)) < r) || null;
 }
 // Snap a point to the endpoint of a bar outside `ids` when close enough.
